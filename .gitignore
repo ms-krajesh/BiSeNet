@@ -104,6 +104,5 @@ venv.bak/
 
 
 ## Coin: 
-gtFine_trainvaltest.zip
-gtFine/
+data/
 
