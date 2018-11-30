@@ -12,6 +12,8 @@ from PIL import Image
 import numpy as np
 
 from transform import *
+from preprocess_data import labels_info
+
 
 
 class CityScapes(Dataset):
@@ -19,6 +21,10 @@ class CityScapes(Dataset):
         super(CityScapes, self).__init__(*args, **kwargs)
         assert mode in ('train', 'val', 'test')
         self.mode = mode
+        self.n_classes = 19
+        self.ignore_lb = 255
+        self.lb_map = {el['id']: el['trainId'] for el in labels_info}
+        self.lb_ignore_eval = [el['id'] for el in labels_info if el['ignoreInEval']]
 
         ## parse img directory
         self.imgs = {}
@@ -78,6 +84,7 @@ class CityScapes(Dataset):
             img, label = im_lb['im'], im_lb['lb']
         img = self.to_tensor(img)
         label = np.array(label).astype(np.int64)[np.newaxis, :]
+        label = self.convert_labels(label)
         return img, label
 
 
@@ -85,8 +92,17 @@ class CityScapes(Dataset):
         return self.len
 
 
+    def convert_labels(self, label):
+        if self.mode in ('val', 'test'):
+            label[np.isin(label, self.lb_ignore_eval)] = self.ignore_lb
+        for k, v in self.lb_map.items():
+            label[label == k] = v
+        return label
+
+
+
 if __name__ == "__main__":
-    ds = CityScapes('./data/')
+    ds = CityScapes('./data/', mode = 'val')
     im, label = ds[10]
     #  print(label)
     print(type(label))
@@ -96,9 +112,9 @@ if __name__ == "__main__":
     #  print(type(label))
     from torch.utils.data import DataLoader
     dl = DataLoader(ds,
-                    batch_size = 1,
+                    batch_size = 30,
                     shuffle = False,
-                    num_workers = 1,
+                    num_workers = 6,
                     drop_last = True)
     im, lb = next(iter(dl))
     lb = lb.numpy()
@@ -106,6 +122,19 @@ if __name__ == "__main__":
     print(type(lb))
     print(lb.shape)
     print(label.shape)
-    print(im)
+    #  print(im)
     print(im.size())
+    print(np.max(lb))
+
+    from tqdm import tqdm
+
+    diter = iter(dl)
+    lmax, lmin = -1, 1000
+    for i, (im, lb) in enumerate(tqdm(diter)):
+        lb = lb.numpy()
+        lb[lb == 255] = 3
+        lmax = np.max(lb) if lmax < np.max(lb) else lmax
+        lmin = np.min(lb) if lmin > np.min(lb) else lmin
+
+    print(lmax, lmin)
 
