@@ -91,6 +91,8 @@ class ContextPath(nn.Module):
                 kernel_size = 3,
                 bias=True)
 
+        self.init_weight()
+
     def forward(self, x):
         x = self.conv1(x)
         x = self.bn1(x)
@@ -119,6 +121,10 @@ class ContextPath(nn.Module):
     def init_weight(self):
         state_dict = modelzoo.load_url(resnet18_url)
         self_state_dict = self.state_dict()
+        for k, v in state_dict.items():
+            if 'fc' in k: continue
+            self_state_dict.update({k: v})
+        self.load_state_dict(self_state_dict)
 
 
 
