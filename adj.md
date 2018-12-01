@@ -19,7 +19,7 @@ mIOU = 34.56
 2. paper里面的train 参数，
 11000iter无warmup: 37.67
 31000iter无warmup:
-11000iter无warmup(修正warmup step): 
+11000iter无warmup(修正warmup step): 38.18
 
 
 1. 使用auxiliary的loss

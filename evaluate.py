@@ -11,6 +11,7 @@ from torch.utils.data import DataLoader
 import torch.nn.functional as F
 
 import os
+import os.path as osp
 import logging
 import time
 import numpy as np
@@ -50,8 +51,8 @@ def eval_model(net):
         im = im.cuda()
         lb = np.squeeze(lb.numpy(), 1)
         _, H, W = lb.shape
-        out, out16, out32 = net(im)
         with torch.no_grad():
+            out, out16, out32 = net(im)
             scores = F.interpolate(out, (H, W), mode='bilinear')
             probs = F.softmax(scores, 1)
         probs = probs.detach().cpu().numpy()
