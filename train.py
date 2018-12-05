@@ -70,6 +70,7 @@ class Optimizer(object):
 
 
 def train():
+    logger.info('')
     ## dataset
     batchsize = 16
     n_workers = 8
@@ -87,17 +88,18 @@ def train():
     net.cuda()
     net.train()
     net = nn.DataParallel(net)
-    Loss = nn.CrossEntropyLoss(ignore_index=ignore_idx)
+    LossP = nn.CrossEntropyLoss(ignore_index=ignore_idx)
+    Loss2 = nn.CrossEntropyLoss(ignore_index=ignore_idx)
+    Loss3 = nn.CrossEntropyLoss(ignore_index=ignore_idx)
 
     ## optimizer
     momentum = 0.9
     weight_decay = 1e-4
     lr_start = 2.5e-2
-    #  lr_start = 1e-3
-    max_iter = 11000
+    max_iter = 91000
     power = 0.9
-    warmup_steps = 1
-    warmup_start_lr = 2.5e-2
+    warmup_steps = 1000
+    warmup_start_lr = 1e-5
     optim = Optimizer(
             net.parameters(),
             lr_start,
@@ -110,6 +112,7 @@ def train():
 
     ## train loop
     msg_iter = 20
+    eval_iter = 10000
     loss_avg = []
     st = glob_st = time.time()
     diter = iter(dl)
@@ -127,13 +130,19 @@ def train():
 
         optim.zero_grad()
         out, out16, out32 = net(im)
-        out = F.interpolate(out, (H, W), mode='bilinear')
-        loss = Loss(out, lb)
+        #  out16 = F.interpolate(out16, (H, W), mode='bilinear')
+        #  out32 = F.interpolate(out32, (H, W), mode='bilinear')
+        lossp = LossP(out, lb)
+        #  loss2 = Loss2(out16, lb)
+        #  loss3 = Loss3(out32, lb)
+        #  loss = lossp + loss2 + loss3
+        loss = lossp
         loss.backward()
         optim.step()
 
         loss_avg.append(loss.item())
 
+        ## print training log message
         if it % msg_iter == 0 and not it == 0:
             loss_avg = sum(loss_avg) / len(loss_avg)
             lr = optim.lr
@@ -159,13 +168,23 @@ def train():
             loss_avg = []
             st = ed
 
-    ## dump result
+        ## eval the model and save checkpoint
+        if (it - warmup_steps) % eval_iter == 0 and not it == warmup_steps:
+            logger.info('evaluating the model at iter: {}'.format(it))
+            net.eval()
+            mIOU = eval_model(net)
+            net.train()
+            logger.info('mIOU is: {}'.format(mIOU))
+            save_pth = osp.join(respth, 'model_final_{}.pth'.format(it))
+            torch.save(net.module.state_dict(), save_pth)
+            logger.info('checkpoint saved to: {}'.format(save_pth))
+
+
+    ## dump the final model and evaluate the result
     save_pth = osp.join(respth, 'model_final.pth')
     torch.save(net.module.state_dict(), save_pth)
     logger.info('training done, model saved to: {}'.format(save_pth))
-
-    ## evaluate
-    logger.info('start evaluating the model')
+    logger.info('evaluating the final model')
     net.eval()
     mIOU = eval_model(net)
     logger.info('mIOU is: {}'.format(mIOU))

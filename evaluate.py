@@ -21,45 +21,44 @@ from tqdm import tqdm
 def compute_iou(pred, lb, lb_ignore=255):
     assert pred.shape == lb.shape
 
-    iou_batch = []
-    for i, (p, l) in enumerate(zip(pred, lb)):
-        clses = set(np.unique(lb).tolist())
-        clses.remove(lb_ignore)
-        ious = []
-        for cls in clses:
-            prone = p == cls
-            lbone = l == cls
-            cross = np.logical_and(prone, lbone)
-            union = np.logical_or(prone, lbone)
-            iou = float(np.sum(cross)) / float(np.sum(union) + 1e-4)
-            ious.append(iou)
-        iou_batch.append(sum(ious) / len(ious))
-    return iou_batch
+    clses = set(np.unique(lb).tolist())
+    clses.remove(lb_ignore)
+    ious = []
+    for cls in clses:
+        pmask = pred == cls
+        lmask = lb == cls
+        cross = np.logical_and(pmask, lmask)
+        union = np.logical_or(pmask, lmask)
+        iou = float(np.sum(cross)) / float(np.sum(union))
+        ious.append(iou)
+    ious = sum(ious) / len(ious)
+    return ious
+
 
 def eval_model(net):
     ## dataloader
     ds = CityScapes('./data', 'val')
     dl = DataLoader(ds,
-                    batch_size = 4,
+                    batch_size = 1,
                     shuffle = False,
-                    num_workers = 4,
+                    num_workers = 1,
                     drop_last = False)
 
     ## evaluate
     ious = []
-    for i, (im, lb) in enumerate(tqdm(dl)):
-        im = im.cuda()
-        lb = np.squeeze(lb.numpy(), 1)
-        _, H, W = lb.shape
+    for i, (im, lb) in enumerate(tqdm(ds)):
+        im = im.cuda().unsqueeze(0)
+        lb = np.squeeze(lb, 0)
+        H, W = lb.shape
         with torch.no_grad():
             out, out16, out32 = net(im)
             scores = F.interpolate(out, (H, W), mode='bilinear')
-            probs = F.softmax(scores, 1)
+            probs = F.softmax(scores, 1).squeeze(0)
         probs = probs.detach().cpu().numpy()
-        pred = np.argmax(probs, axis=1)
+        pred = np.argmax(probs, axis=0)
 
-        IOUB = compute_iou(pred, lb)
-        ious.extend(IOUB)
+        iou = compute_iou(pred, lb)
+        ious.append(iou)
         #  lb[lb == 255] = 2
         #  lbmax = lbmax if lbmax > np.max(lb) else np.max(lb)
         #  lbmin = lbmin if lbmin < np.min(lb) else np.min(lb)
@@ -77,9 +76,9 @@ def evaluate():
     net = BiSeNet(n_classes=n_classes)
     net.cuda()
     net.eval()
-    save_pth = osp.join(respth, 'model_final.pth.aspaper11000')
+    save_pth = osp.join(respth, 'model_final.pth')
     net.load_state_dict(torch.load(save_pth))
-    net = nn.DataParallel(net)
+    #  net = nn.DataParallel(net)
 
     ## dataset
     logger.info('compute the mIOU')

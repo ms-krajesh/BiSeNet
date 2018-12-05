@@ -95,8 +95,7 @@ class CityScapes(Dataset):
 
 
     def convert_labels(self, label):
-        if self.mode in ('val', 'test'):
-            label[np.isin(label, self.lb_ignore_eval)] = self.ignore_lb
+        label[np.isin(label, self.lb_ignore_eval)] = self.ignore_lb
         for k, v in self.lb_map.items():
             label[label == k] = v
         return label
@@ -104,11 +103,16 @@ class CityScapes(Dataset):
 
 
 if __name__ == "__main__":
+    from tqdm import tqdm
     ds = CityScapes('./data/', mode = 'train')
-    im, label = ds[10]
-    #  print(label)
-    print(type(label))
-    _ = input()
+    #  im, label = ds[10]
+    #  _ = input()
+    uni = []
+    for im, lb in tqdm(ds):
+        lb_uni = np.unique(lb).tolist()
+        uni.extend(lb_uni)
+    print(uni)
+    print(set(uni))
 
     #  #  print(type(im))
     #  #  print(im.size())
@@ -119,7 +123,7 @@ if __name__ == "__main__":
     #                  batch_size = 30,
     #                  shuffle = False,
     #                  num_workers = 6,
-    #                  drop_last = True)
+    #                  drop_last = False)
     #  im, lb = next(iter(dl))
     #  lb = lb.numpy()
     #  #  print(lb)

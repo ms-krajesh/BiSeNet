@@ -29,12 +29,40 @@ class ConvBNReLU(nn.Module):
         return x
 
 
+
+class UpSampleOut(nn.Module):
+    def __init__(self, in_chan, out_chan, ks = 3, stride=1, *args, **kwargs):
+        super(UpSampleOut, self).__init__()
+        self.conv = nn.Conv2d(in_chan,
+                out_chan,
+                kernel_size = ks,
+                stride=stride,
+                padding = 1,
+                bias=True)
+        self.bn = nn.BatchNorm2d(out_chan)
+        self.conv_out = nn.Conv2d(out_chan,
+                out_chan,
+                kernel_size = 1,
+                bias=True)
+
+    def forward(self, x, size):
+        x = F.interpolate(x, size, mode='bilinear')
+        x = self.conv(x)
+        x = self.bn(x)
+        x = F.relu(x, inplace = True)
+        x = self.conv_out(x)
+        return x
+
+
 class SpatialPath(nn.Module):
     def __init__(self, *args, **kwargs):
         super(SpatialPath, self).__init__()
-        self.conv1 = ConvBNReLU(3, 64, stride = 2)
-        self.conv2 = ConvBNReLU(64, 128, stride = 2)
-        self.conv3 = ConvBNReLU(128, 256, stride = 2)
+        self.conv1 = ConvBNReLU(3, 64, stride=2)
+        self.conv2 = ConvBNReLU(64, 256, stride=2)
+        self.conv3 = ConvBNReLU(256, 512, stride=2)
+        #  self.conv1 = ConvBNReLU(3, 64, ks=3, stride=2)
+        #  self.conv2 = ConvBNReLU(32, 128, ks=3, stride=2)
+        #  self.conv3 = ConvBNReLU(64, 512, ks=3, stride=2)
 
     def forward(self, x):
         x = self.conv1(x)
@@ -90,29 +118,67 @@ class ContextPath(nn.Module):
                 n_classes,
                 kernel_size = 3,
                 bias=True)
+        #  self.conv_feat16_out = UpSampleOut(256, n_classes)
+        #  self.conv_feat32_out = UpSampleOut(512, n_classes)
+        self.conv16_inner = nn.Conv2d(256,
+                512,
+                kernel_size = 1,
+                bias=True)
+        self.conv16_outer = nn.Conv2d(512,
+                512,
+                kernel_size = 3,
+                padding = 1,
+                bias=True)
+        self.conv32_avg = nn.Conv2d(512,
+                512,
+                kernel_size = 1,
+                bias=True)
+        self.bn32_avg = nn.BatchNorm2d(512)
+        self.sig_avg = nn.Sigmoid()
 
         self.init_weight()
 
+
     def forward(self, x):
+        H0, W0 = x.size()[2:]
         x = self.conv1(x)
         x = self.bn1(x)
         x = self.relu(x)
         x = self.maxpool(x)
         x = self.layer1(x)
         x = self.layer2(x)
-        H, W = x.size()[2:]
-
         feat16 = self.layer3(x)
         feat32 = self.layer4(feat16)
+        #  H, W = x.size()[2:]
+
+        H8, W8 = x.size()[2:]
+        H16, W16 = feat16.size()[2:]
+        H32, W32 = feat32.size()[2:]
+
         avg = F.avg_pool2d(feat32, feat32.size()[2:])
+        avg_conv = self.conv32_avg(avg)
+        avg_bn = self.bn32_avg(avg_conv)
+        avg_sig = self.sig_avg(avg_bn)
+
         feat16_arm = self.arm16(feat16)
         feat32_arm = self.arm32(feat32)
 
-        feat32_with_avg = torch.mul(feat32_arm, avg)
-        feat32_up = F.interpolate(feat32_with_avg, (H, W), mode = 'bilinear')
-        feat16_up = F.interpolate(feat16_arm, (H, W), mode = 'bilinear')
+        ## TODO: 1. try nearest as FPN
+        ## TODO: 2. try first FPN then channel wise multiplication
+        feat32_up = F.interpolate(feat32_arm, (H16, W16), mode='bilinear')
+        feat16_inner = self.conv16_inner(feat16_arm)
+        feat16_inner = feat16_inner + feat32_up
+        feat16_out = self.conv16_outer(feat16_inner)
 
-        feat_out = torch.cat((feat32_up, feat16_up), dim = 1)
+        feat16_out = torch.mul(avg_sig, feat16_out)
+        feat_out = F.interpolate(feat16_out, (H8, W8), mode = 'bilinear')
+        ## TODO: 3. try to use resnet feature instead of arm feature as output feat
+        #  feat_out16 = self.conv_feat16_out(feat16_arm, (H0, W0))
+        #  feat_out32 = self.conv_feat32_out(feat32_arm, (H0, W0))
+
+        #  feat32_up = F.interpolate(feat32_with_avg, (H, W), mode = 'bilinear')
+        #  feat16_up = F.interpolate(feat16_arm, (H, W), mode = 'bilinear')
+        #  feat_out = torch.cat((feat32_up, feat16_up), dim = 1)
         feat_out16 = self.conv_feat16(feat16)
         feat_out32 = self.conv_feat32(feat32)
 
@@ -132,7 +198,7 @@ class ContextPath(nn.Module):
 class FeatureFusionModule(nn.Module):
     def __init__(self, in_chan, n_classes, *args, **kwargs):
         super(FeatureFusionModule, self).__init__()
-        self.convblk = ConvBNReLU(in_chan, n_classes, ks = 3)
+        self.convblk = ConvBNReLU(in_chan, n_classes, ks=3, stride=2)
         self.conv1 = nn.Conv2d(n_classes, n_classes, 1)
         self.conv2 = nn.Conv2d(n_classes, n_classes, 1)
         self.sigmoid = nn.Sigmoid()
@@ -157,12 +223,20 @@ class BiSeNet(nn.Module):
         self.sp = SpatialPath()
         self.cp = ContextPath(n_classes)
         self.ffm = FeatureFusionModule(1024, n_classes)
+        self.conv = nn.Conv2d(n_classes,
+                n_classes,
+                kernel_size=1,
+                stride=1,
+                bias=True)
 
 
     def forward(self, x):
+        H, W = x.size()[2:]
         feat_sp = self.sp(x)
         feat_cp, feat16, feat32 = self.cp(x)
         feat_out = self.ffm(feat_sp, feat_cp)
+        feat_out = F.interpolate(feat_out, (H, W), mode='bilinear')
+        feat_out = self.conv(feat_out)
         return feat_out, feat16, feat32
 
 

@@ -47,7 +47,6 @@ def infer():
     probs = probs.detach().cpu().numpy()
     pred = np.squeeze(np.argmax(probs, axis=1), 0)
     H, W = pred.shape
-    print(pred.shape)
 
     ## show infered picture
     out = np.empty((H, W, 3), dtype = np.uint8)
