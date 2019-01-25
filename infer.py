@@ -19,9 +19,10 @@ def infer():
     with open('cityscapes_info.json', 'r') as fr:
         cs_info = json.load(fr)
         colormap = {el['trainId']:el['color'] for el in cs_info}
+        colormap[19] = colormap[255]
 
     ## load model
-    n_classes = 20
+    n_classes = 19
     net = BiSeNet(n_classes=n_classes)
     net.cuda()
     net.eval()
@@ -42,8 +43,7 @@ def infer():
     ## inference
     with torch.no_grad():
         out, out16, out32 = net(im)
-        scores = F.interpolate(out, (H, W), mode='bilinear')
-        probs = F.softmax(scores, 1)
+        probs = F.softmax(out, 1)
     probs = probs.detach().cpu().numpy()
     pred = np.squeeze(np.argmax(probs, axis=1), 0)
     H, W = pred.shape

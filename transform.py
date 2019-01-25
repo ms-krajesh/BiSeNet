@@ -25,12 +25,14 @@ class RandomCrop(object):
             lb = lb.resize((w, h), Image.NEAREST)
         sw, sh = random.random() * (w - W), random.random() * (h - H)
         crop = int(sw), int(sh), int(sw) + W, int(sh) + H
-        return dict(im = im.crop(crop),
-                    lb = lb.crop(crop))
+        return dict(
+                im = im.crop(crop),
+                lb = lb.crop(crop)
+                    )
 
 
 class HorizontalFlip(object):
-    def __init__(self, p = 0.5, *args, **kwargs):
+    def __init__(self, p=0.5, *args, **kwargs):
         self.p = p
 
     def __call__(self, im_lb):
@@ -45,7 +47,7 @@ class HorizontalFlip(object):
 
 
 class RandomScale(object):
-    def __init__(self, scales = (1, ), *args, **kwargs):
+    def __init__(self, scales=(1, ), *args, **kwargs):
         self.scales = scales
 
     def __call__(self, im_lb):
@@ -56,6 +58,19 @@ class RandomScale(object):
         w, h = int(W * scale), int(H * scale)
         return dict(im = im.resize((w, h), Image.BILINEAR),
                     lb = lb.resize((w, h), Image.NEAREST),
+                )
+
+
+class ScaleBySize(object):
+    def __init__(self, size=(1536, 768), *args, **kwargs):
+        self.size = size
+
+    def __call__(self, im_lb):
+        im = im_lb['im']
+        lb = im_lb['lb']
+        W, H = self.size
+        return dict(im = im.resize((W, H), Image.BILINEAR),
+                    lb = lb.resize((W, H), Image.NEAREST),
                 )
 
 

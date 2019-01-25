@@ -70,11 +70,16 @@ class Optimizer(object):
 
 
 def train():
+    ### TODO: use inplace-abn and larger crop size,
+    ### TODO: use gn and smaller batch size but larger crop size
     logger.info('')
     ## dataset
+    n_classes = 19
     batchsize = 16
-    n_workers = 8
-    ds = CityScapes('./data', 'train')
+    n_workers = 16
+    cropsize = [640, 360]
+    #  cropsize = [960, 480]
+    ds = CityScapes('./data', cropsize=cropsize, mode='train')
     dl = DataLoader(ds,
                     batch_size = batchsize,
                     shuffle = True,
@@ -82,12 +87,11 @@ def train():
                     drop_last = True)
 
     ## model
-    n_classes = 20
     ignore_idx = 255
     net = BiSeNet(n_classes=n_classes)
     net.cuda()
     net.train()
-    net = nn.DataParallel(net)
+    #  net = nn.DataParallel(net)
     LossP = nn.CrossEntropyLoss(ignore_index=ignore_idx)
     Loss2 = nn.CrossEntropyLoss(ignore_index=ignore_idx)
     Loss3 = nn.CrossEntropyLoss(ignore_index=ignore_idx)
@@ -111,15 +115,15 @@ def train():
             power)
 
     ## train loop
-    msg_iter = 20
-    eval_iter = 10000
+    msg_iter = 50
+    eval_iter = 100000
     loss_avg = []
     st = glob_st = time.time()
     diter = iter(dl)
     for it in range(max_iter):
         try:
             im, lb = next(diter)
-            if not im.size()[0] == batchsize: continue
+            if not im.size()[0]==batchsize: continue
         except StopIteration:
             diter = iter(dl)
             im, lb = next(diter)
@@ -130,20 +134,18 @@ def train():
 
         optim.zero_grad()
         out, out16, out32 = net(im)
-        #  out16 = F.interpolate(out16, (H, W), mode='bilinear')
-        #  out32 = F.interpolate(out32, (H, W), mode='bilinear')
         lossp = LossP(out, lb)
-        #  loss2 = Loss2(out16, lb)
-        #  loss3 = Loss3(out32, lb)
-        #  loss = lossp + loss2 + loss3
-        loss = lossp
+        loss2 = Loss2(out16, lb)
+        loss3 = Loss3(out32, lb)
+        loss = lossp + loss2 + loss3
+        #  loss = lossp + loss2
+        #  loss = lossp
         loss.backward()
         optim.step()
 
         loss_avg.append(loss.item())
-
         ## print training log message
-        if it % msg_iter == 0 and not it == 0:
+        if it%msg_iter==0 and not it==0:
             loss_avg = sum(loss_avg) / len(loss_avg)
             lr = optim.lr
             ed = time.time()
@@ -169,22 +171,32 @@ def train():
             st = ed
 
         ## eval the model and save checkpoint
-        if (it - warmup_steps) % eval_iter == 0 and not it == warmup_steps:
+        if it>warmup_steps and (it-warmup_steps)%eval_iter==0 and not it==warmup_steps:
             logger.info('evaluating the model at iter: {}'.format(it))
             net.eval()
             mIOU = eval_model(net)
             net.train()
             logger.info('mIOU is: {}'.format(mIOU))
             save_pth = osp.join(respth, 'model_final_{}.pth'.format(it))
-            torch.save(net.module.state_dict(), save_pth)
+            if hasattr(net, 'module'):
+                state = net.module.state_dict()
+            else:
+                state = net.state_dict()
+            torch.save(state, save_pth)
             logger.info('checkpoint saved to: {}'.format(save_pth))
 
 
     ## dump the final model and evaluate the result
     save_pth = osp.join(respth, 'model_final.pth')
-    torch.save(net.module.state_dict(), save_pth)
+    net.cpu()
+    if hasattr(net, 'module'):
+        state = net.module.state_dict()
+    else:
+        state = net.state_dict()
+    torch.save(state, save_pth)
     logger.info('training done, model saved to: {}'.format(save_pth))
     logger.info('evaluating the final model')
+    net.cuda()
     net.eval()
     mIOU = eval_model(net)
     logger.info('mIOU is: {}'.format(mIOU))

@@ -16,17 +16,21 @@ import logging
 import time
 import numpy as np
 from tqdm import tqdm
+import numba
 
 
+@numba.jit
 def compute_iou(pred, lb, lb_ignore=255):
     assert pred.shape == lb.shape
 
+    mask = np.logical_not(lb == lb_ignore)
     clses = set(np.unique(lb).tolist())
-    clses.remove(lb_ignore)
+    if lb_ignore in clses: clses.remove(lb_ignore)
     ious = []
     for cls in clses:
-        pmask = pred == cls
-        lmask = lb == cls
+        ## TODO: use p_val, l_val = pred[mask], lb[mask] instead of always slice
+        pmask = pred[mask] == cls
+        lmask = lb[mask] == cls
         cross = np.logical_and(pmask, lmask)
         union = np.logical_or(pmask, lmask)
         iou = float(np.sum(cross)) / float(np.sum(union))
@@ -37,31 +41,22 @@ def compute_iou(pred, lb, lb_ignore=255):
 
 def eval_model(net):
     ## dataloader
-    ds = CityScapes('./data', 'val')
-    dl = DataLoader(ds,
-                    batch_size = 1,
-                    shuffle = False,
-                    num_workers = 1,
-                    drop_last = False)
+    dsval = CityScapes('./data', mode='val')
 
     ## evaluate
     ious = []
-    for i, (im, lb) in enumerate(tqdm(ds)):
+    for i, (im, lb) in enumerate(tqdm(dsval)):
         im = im.cuda().unsqueeze(0)
         lb = np.squeeze(lb, 0)
         H, W = lb.shape
         with torch.no_grad():
-            out, out16, out32 = net(im)
-            scores = F.interpolate(out, (H, W), mode='bilinear')
-            probs = F.softmax(scores, 1).squeeze(0)
+            out_p, out16 ,out32 = net(im)
+            probs = F.softmax(out_p, 1).squeeze(0)
         probs = probs.detach().cpu().numpy()
         pred = np.argmax(probs, axis=0)
 
         iou = compute_iou(pred, lb)
         ious.append(iou)
-        #  lb[lb == 255] = 2
-        #  lbmax = lbmax if lbmax > np.max(lb) else np.max(lb)
-        #  lbmin = lbmin if lbmin < np.min(lb) else np.min(lb)
     mIOU = sum(ious) / len(ious)
     return mIOU
 
@@ -72,13 +67,12 @@ def evaluate():
 
     ## model
     logger.info('setup and restore model')
-    n_classes = 20
+    n_classes = 19
     net = BiSeNet(n_classes=n_classes)
     net.cuda()
     net.eval()
     save_pth = osp.join(respth, 'model_final.pth')
     net.load_state_dict(torch.load(save_pth))
-    #  net = nn.DataParallel(net)
 
     ## dataset
     logger.info('compute the mIOU')

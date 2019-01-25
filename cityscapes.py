@@ -17,17 +17,15 @@ from transform import *
 
 
 class CityScapes(Dataset):
-    def __init__(self, rootpth, mode = 'train', *args, **kwargs):
+    def __init__(self, rootpth, cropsize=(640, 480), mode='train', *args, **kwargs):
         super(CityScapes, self).__init__(*args, **kwargs)
         assert mode in ('train', 'val', 'test')
         self.mode = mode
-        self.n_classes = 20
         self.ignore_lb = 255
 
         with open('./cityscapes_info.json', 'r') as fr:
             labels_info = json.load(fr)
         self.lb_map = {el['id']: el['trainId'] for el in labels_info}
-        self.lb_ignore_eval = [el['id'] for el in labels_info if el['ignoreInEval']]
 
         ## parse img directory
         self.imgs = {}
@@ -67,10 +65,13 @@ class CityScapes(Dataset):
             transforms.ToTensor(),
             transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225)),
             ])
-        self.trans = Compose([
+        self.trans_train = Compose([
             HorizontalFlip(),
             RandomScale((0.75, 1.0, 1.5, 1.75, 2.0)),
-            RandomCrop((640, 360))
+            RandomCrop(cropsize)
+            ])
+        self.trans_val = Compose([
+            ScaleBySize((1536, 768)),
             ])
 
 
@@ -82,7 +83,11 @@ class CityScapes(Dataset):
         label = Image.open(lbpth)
         if self.mode == 'train':
             im_lb = dict(im = img, lb = label)
-            im_lb = self.trans(im_lb)
+            im_lb = self.trans_train(im_lb)
+            img, label = im_lb['im'], im_lb['lb']
+        else:
+            im_lb = dict(im = img, lb = label)
+            #  im_lb = self.trans_val(im_lb)
             img, label = im_lb['im'], im_lb['lb']
         img = self.to_tensor(img)
         label = np.array(label).astype(np.int64)[np.newaxis, :]
@@ -95,7 +100,6 @@ class CityScapes(Dataset):
 
 
     def convert_labels(self, label):
-        label[np.isin(label, self.lb_ignore_eval)] = self.ignore_lb
         for k, v in self.lb_map.items():
             label[label == k] = v
         return label
@@ -104,7 +108,8 @@ class CityScapes(Dataset):
 
 if __name__ == "__main__":
     from tqdm import tqdm
-    ds = CityScapes('./data/', mode = 'train')
+    ds = CityScapes('./data/', n_classes=19, mode='val')
+    #  ds = CityScapes('./data/', n_classes=19, mode='train')
     #  im, label = ds[10]
     #  _ = input()
     uni = []
