@@ -100,7 +100,7 @@ def train():
     momentum = 0.9
     weight_decay = 1e-4
     lr_start = 2.5e-2
-    max_iter = 91000
+    max_iter = 71000
     power = 0.9
     warmup_steps = 1000
     warmup_start_lr = 1e-5

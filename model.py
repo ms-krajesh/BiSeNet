@@ -120,11 +120,11 @@ class ContextPath(nn.Module):
         #  #  feat32 = torch.mul(feat32, avg)
         #  feat32 = feat32 + avg
 
-        #  feat32_arm = self.arm32(feat32)
-        #  feat16_arm = self.arm16(feat16)
+        feat32_arm = self.arm32(feat32)
+        feat16_arm = self.arm16(feat16)
 
-        feat32_up = F.interpolate(feat32, (H16, W16), mode='nearest')
-        feat16_cat = torch.cat([feat32_up, feat16], dim=1)
+        feat32_up = F.interpolate(feat32_arm, (H16, W16), mode='nearest')
+        feat16_cat = torch.cat([feat32_up, feat16_arm], dim=1)
         feat16_cat = self.conv_cat(feat16_cat)
 
         feat_out8 = F.interpolate(feat16_cat, (H8, W8), mode='nearest')
